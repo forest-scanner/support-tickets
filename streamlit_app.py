@@ -5,7 +5,11 @@ import altair as alt
 import streamlit as st
 import streamlit_authenticator as stauth
 
-# --- CONFIGURACIÓN DE AUTENTICACIÓN (Versión 0.2.3) ---
+# =============================================
+#           CONFIGURACIÓN DE AUTENTICACIÓN
+# =============================================
+
+# Credenciales (usuario: admin / contraseña: Admin123)
 credentials = {
     "usernames": {
         "admin": {
@@ -15,106 +19,91 @@ credentials = {
     }
 }
 
+# Configuración del autenticador (versión 0.2.3)
 authenticator = stauth.Authenticate(
     credentials,
-    cookie_name="ticket_app_cookie",
-    key="tu_clave_secreta_aleatoria_123456",  # ¡Cambia esto en producción!
+    cookie_name="tickets_app",
+    key="clave_secreta_aleatoria_123456789",  # ¡Cambia esto en producción!
     cookie_expiry_days=1
 )
 
-# --- LOGIN (Sintaxis correcta para v0.2.3) ---
+# Login en sidebar (sintaxis correcta para v0.2.3)
 name, authentication_status, username = authenticator.login("Login", "sidebar")
 
-# --- VERIFICACIÓN ---
+# =============================================
+#           VERIFICACIÓN DE ACCESO
+# =============================================
+
 if authentication_status is False:
     st.sidebar.error("❌ Usuario/contraseña incorrectos")
-    st.stop()
+    st.stop()  # Detiene la app si las credenciales son inválidas
 
 if authentication_status is None:
-    st.sidebar.warning("🔒 Por favor ingresa tus credenciales")
-    st.stop()
+    st.sidebar.warning("🔒 Ingrese sus credenciales")
+    st.stop()  # Detiene la app si no se ingresaron credenciales
 
-# --- APP PRINCIPAL (solo visible si autenticado) ---
+# =============================================
+#           APLICACIÓN PRINCIPAL (TICKETS)
+# =============================================
+
 st.sidebar.success(f"👋 ¡Bienvenido {name}!")
 authenticator.logout("Cerrar sesión", "sidebar")
 
-# =============================================
-#           SISTEMA DE TICKETS
-# =============================================
-st.title("🎫 Sistema de Tickets de Soporte")
-st.markdown("**Persistencia en CSV | Autenticación segura**")
-
-# --- CONFIGURACIÓN CSV ---
+# --- Configuración del CSV ---
 CSV_FILE = "tickets.csv"
 
 if not os.path.exists(CSV_FILE):
     df = pd.DataFrame(columns=[
         "ID", "Título", "Descripción", "Estado", 
-        "Prioridad", "Fecha Creación", "Asignado a"
+        "Prioridad", "Fecha", "Asignado a"
     ])
 else:
     df = pd.read_csv(CSV_FILE)
 
-# --- FUNCIÓN PARA GUARDAR ---
+# --- Función para guardar datos ---
 def save_data():
     df.to_csv(CSV_FILE, index=False)
 
-# --- FORMULARIO NUEVO TICKET ---
+# --- Interfaz de tickets ---
+st.title("🎫 Sistema de Tickets")
+st.markdown("**Gestión de tickets con autenticación segura**")
+
 with st.expander("➕ Crear nuevo ticket", expanded=True):
     with st.form("nuevo_ticket_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            titulo = st.text_input("Título*")
-        with col2:
-            prioridad = st.selectbox("Prioridad*", ["Alta", "Media", "Baja"])
-        
-        descripcion = st.text_area("Descripción detallada*")
+        titulo = st.text_input("Título*")
+        descripcion = st.text_area("Descripción*")
+        prioridad = st.selectbox("Prioridad*", ["Alta", "Media", "Baja"])
         asignado = st.text_input("Asignado a (opcional)")
         
-        submitted = st.form_submit_button("📤 Enviar ticket")
-        
-        if submitted and titulo and descripcion:
-            nuevo_id = f"TKT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
-            
-            nuevo_ticket = {
-                "ID": nuevo_id,
-                "Título": titulo,
-                "Descripción": descripcion,
-                "Estado": "Abierto",
-                "Prioridad": prioridad,
-                "Fecha Creación": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "Asignado a": asignado if asignado else "Sin asignar"
-            }
-            
-            df = pd.concat([df, pd.DataFrame([nuevo_ticket])], ignore_index=True)
-            save_data()
-            st.success(f"✅ Ticket {nuevo_id} creado correctamente")
+        if st.form_submit_button("📤 Enviar ticket"):
+            if titulo and descripcion:
+                nuevo_id = f"TKT-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                nuevo_ticket = {
+                    "ID": nuevo_id,
+                    "Título": titulo,
+                    "Descripción": descripcion,
+                    "Estado": "Abierto",
+                    "Prioridad": prioridad,
+                    "Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Asignado a": asignado if asignado else "Sin asignar"
+                }
+                df.loc[len(df)] = nuevo_ticket  # Añade el nuevo ticket
+                save_data()
+                st.success(f"✅ Ticket {nuevo_id} creado!")
+            else:
+                st.warning("⚠️ Completa los campos obligatorios")
 
-# --- VISUALIZACIÓN DE TICKETS ---
-st.header("📋 Listado de Tickets")
-st.caption(f"Mostrando {len(df)} tickets registrados")
+# --- Listado de tickets ---
+st.header("📋 Tickets existentes")
+st.caption(f"Total: {len(df)} tickets")
 
 if not df.empty:
     # Filtros
-    col1, col2 = st.columns(2)
-    with col1:
-        filtro_estado = st.multiselect(
-            "Filtrar por estado",
-            options=df["Estado"].unique(),
-            default=["Abierto"]
-        )
-    with col2:
-        filtro_prioridad = st.multiselect(
-            "Filtrar por prioridad",
-            options=df["Prioridad"].unique()
-        )
+    estados = df["Estado"].unique()
+    filtro_estado = st.multiselect("Filtrar por estado", estados, default=["Abierto"])
     
     # Aplicar filtros
-    df_filtrado = df.copy()
-    if filtro_estado:
-        df_filtrado = df_filtrado[df_filtrado["Estado"].isin(filtro_estado)]
-    if filtro_prioridad:
-        df_filtrado = df_filtrado[df_filtrado["Prioridad"].isin(filtro_prioridad)]
+    df_filtrado = df[df["Estado"].isin(filtro_estado)] if filtro_estado else df
     
     # Editor de datos
     edited_df = st.data_editor(
@@ -131,10 +120,7 @@ if not df.empty:
                 options=["Alta", "Media", "Baja"],
                 required=True
             ),
-            "Fecha Creación": st.column_config.DatetimeColumn(
-                "Fecha",
-                disabled=True
-            )
+            "Fecha": st.column_config.DatetimeColumn("Fecha", disabled=True)
         },
         hide_index=True,
         use_container_width=True,
@@ -147,47 +133,27 @@ if not df.empty:
         save_data()
         st.rerun()
 
-# --- ESTADÍSTICAS ---
+# --- Estadísticas ---
 st.header("📊 Métricas")
 if not df.empty:
     col1, col2, col3 = st.columns(3)
-    col1.metric("Tickets abiertos", len(df[df["Estado"] == "Abierto"]))
+    col1.metric("Abiertos", len(df[df["Estado"] == "Abierto"]))
     col2.metric("Alta prioridad", len(df[df["Prioridad"] == "Alta"]))
     col3.metric("Sin asignar", len(df[df["Asignado a"] == "Sin asignar"]))
     
     # Gráficos
-    tab1, tab2 = st.tabs(["📈 Por estado", "📅 Por fecha"])
-    
-    with tab1:
-        st.altair_chart(
-            alt.Chart(df).mark_bar().encode(
-                x="Estado:N",
-                y="count():Q",
-                color="Estado:N"
-            ),
-            use_container_width=True
-        )
-    
-    with tab2:
-        st.altair_chart(
-            alt.Chart(df).mark_line(point=True).encode(
-                x="Fecha Creación:T",
-                y="count():Q",
-                color="Prioridad:N"
-            ),
-            use_container_width=True
-        )
+    st.altair_chart(
+        alt.Chart(df).mark_bar().encode(
+            x="Estado:N",
+            y="count():Q",
+            color="Estado:N"
+        ),
+        use_container_width=True
+    )
 else:
-    st.warning("No hay tickets registrados aún")
+    st.warning("No hay tickets registrados")
 
-# --- REQUIREMENTS.TXT para Streamlit Cloud ---
-"""
-streamlit==1.32.0
-streamlit-authenticator==0.2.3
-pandas==2.1.4
-altair==5.2.0
-numpy==1.26.0
-"""
+
 
 
 
