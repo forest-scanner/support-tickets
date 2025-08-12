@@ -5,136 +5,139 @@ import altair as alt
 import streamlit as st
 import streamlit_authenticator as stauth
 
-# Credenciales con contraseña ya encriptada (bcrypt)
+# --- CONFIGURACIÓN DE AUTENTICACIÓN (Versión 0.2.3) ---
 credentials = {
     "usernames": {
         "admin": {
             "name": "Administrador",
-            "password": "$2b$12$UnXKo29nl.4qx1d4i7WuUOdzqdlE/rX/FLF2P7VrTL/pdQmn6ShQ2"
+            "password": "$2b$12$UnXKo29nl.4qx1d4i7WuUOdzqdlE/rX/FLF2P7VrTL/pdQmn6ShQ2"  # Contraseña: Admin123
         }
     }
 }
 
-# Crear autenticador
 authenticator = stauth.Authenticate(
     credentials,
-    "ticket_app_cookie",   # nombre de la cookie
-    "abcdef",              # clave secreta para la cookie
-    cookie_expiry_days=1
+    "ticket_app_cookie",
+    "abcdef123456",  # Cambia por una clave secreta más larga en producción
+    30  # Días de expiración de la cookie
 )
 
-# Login en barra lateral
-name, authentication_status, username = authenticator.login("Login", location="sidebar")
+# --- LOGIN EN LA BARRA LATERAL ---
+name, authentication_status, username = authenticator.login("Login", "sidebar")
 
-if authentication_status:
-    st.sidebar.success(f"Bienvenido {name} 👋")
-    authenticator.logout("Cerrar sesión", location="sidebar")
+# --- VERIFICACIÓN DE AUTENTICACIÓN ---
+if authentication_status is False:
+    st.sidebar.error("Usuario/contraseña incorrectos")
+    st.stop()
 
-    # ======= APP DE TICKETS =======
-    st.title("🎫 Support tickets")
-    st.write("Sistema de tickets con persistencia en CSV y autenticación segura.")
+if authentication_status is None:
+    st.sidebar.warning("Ingresa tus credenciales")
+    st.stop()
 
-    CSV_FILE = "tickets.csv"
+# --- APP PRINCIPAL (solo accesible si está autenticado) ---
+st.sidebar.success(f"Bienvenido {name} 👋")
+authenticator.logout("Cerrar sesión", "sidebar")
 
-    # Cargar datos si existe
-    if os.path.exists(CSV_FILE):
-        df = pd.read_csv(CSV_FILE)
-    else:
-        df = pd.DataFrame(columns=["ID", "Issue", "Status", "Priority", "Date Submitted"])
+# =============================================
+#           SISTEMA DE TICKETS
+# =============================================
+st.title("🎫 Support tickets")
+st.write("Sistema de tickets con persistencia en CSV")
 
-    st.session_state.df = df.copy()
+# --- CONFIGURACIÓN DEL ARCHIVO CSV ---
+CSV_FILE = "tickets.csv"
 
-    def save_to_csv(dataframe):
-        dataframe.to_csv(CSV_FILE, index=False)
+if not os.path.exists(CSV_FILE):
+    df = pd.DataFrame(columns=["ID", "Issue", "Status", "Priority", "Date Submitted", "Assigned To"])
+else:
+    df = pd.read_csv(CSV_FILE)
 
-    # Agregar ticket
-    st.header("Add a ticket")
-    with st.form("add_ticket_form"):
-        issue = st.text_area("Describe the issue")
-        priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-        submitted = st.form_submit_button("Submit")
+# --- FUNCIÓN PARA GUARDAR ---
+def save_to_csv(dataframe):
+    dataframe.to_csv(CSV_FILE, index=False)
 
+# --- FORMULARIO PARA NUEVOS TICKETS ---
+st.header("🆕 Añadir ticket")
+with st.form("nuevo_ticket"):
+    issue = st.text_area("Descripción del problema*", height=150)
+    priority = st.selectbox("Prioridad*", ["Alta", "Media", "Baja"])
+    assigned_to = st.text_input("Asignado a (opcional)")
+    
+    submitted = st.form_submit_button("Crear ticket")
+    
     if submitted and issue.strip():
-        if len(st.session_state.df) == 0:
-            recent_ticket_number = 1000
-        else:
-            recent_ticket_number = int(max(st.session_state.df.ID).split("-")[1])
+        # Generar ID único
+        last_id = df["ID"].max() if not df.empty else "TICKET-999"
+        new_id = f"TICKET-{int(last_id.split('-')[1]) + 1}" if df.empty else f"TICKET-{int(last_id.split('-')[1]) + 1}"
+        
+        new_ticket = {
+            "ID": new_id,
+            "Issue": issue,
+            "Status": "Abierto",
+            "Priority": priority,
+            "Date Submitted": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "Assigned To": assigned_to if assigned_to else "Sin asignar"
+        }
+        
+        df = pd.concat([df, pd.DataFrame([new_ticket])], ignore_index=True)
+        save_to_csv(df)
+        st.success(f"Ticket {new_id} creado correctamente!")
 
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
-        df_new = pd.DataFrame(
-            [{
-                "ID": f"TICKET-{recent_ticket_number+1}",
-                "Issue": issue,
-                "Status": "Open",
-                "Priority": priority,
-                "Date Submitted": today,
-            }]
-        )
+# --- VISUALIZACIÓN/EDICIÓN DE TICKETS ---
+st.header("📋 Tickets existentes")
+st.write(f"Total de tickets: {len(df)}")
 
-        st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
-        save_to_csv(st.session_state.df)
-        st.success("✅ Ticket submitted!")
-        st.dataframe(df_new, use_container_width=True, hide_index=True)
-
-    # Editar tickets
-    st.header("Existing tickets")
-    st.write(f"Number of tickets: `{len(st.session_state.df)}`")
-
+if not df.empty:
+    # Editor interactivo
     edited_df = st.data_editor(
-        st.session_state.df,
-        use_container_width=True,
-        hide_index=True,
+        df,
         column_config={
+            "ID": st.column_config.TextColumn("ID", disabled=True),
             "Status": st.column_config.SelectboxColumn(
-                "Status", options=["Open", "In Progress", "Closed"], required=True
+                "Estado",
+                options=["Abierto", "En progreso", "Resuelto", "Cerrado"],
+                required=True
             ),
             "Priority": st.column_config.SelectboxColumn(
-                "Priority", options=["High", "Medium", "Low"], required=True
+                "Prioridad",
+                options=["Alta", "Media", "Baja"],
+                required=True
             ),
+            "Date Submitted": st.column_config.DateColumn("Fecha", disabled=True)
         },
-        disabled=["ID", "Date Submitted"],
+        hide_index=True,
+        use_container_width=True
     )
+    
+    # Guardar cambios
+    if not edited_df.equals(df):
+        df = edited_df
+        save_to_csv(df)
+        st.rerun()
 
-    if not edited_df.equals(st.session_state.df):
-        st.session_state.df = edited_df
-        save_to_csv(edited_df)
-        st.info("💾 Changes saved to CSV.")
+# --- ESTADÍSTICAS ---
+st.header("📊 Estadísticas")
 
-    # Estadísticas
-    st.header("Statistics")
+if not df.empty:
     col1, col2, col3 = st.columns(3)
-    num_open_tickets = len(st.session_state.df[st.session_state.df.Status == "Open"])
-    col1.metric(label="Number of open tickets", value=num_open_tickets)
-    col2.metric(label="First response time (hours)", value=5.2)
-    col3.metric(label="Average resolution time (hours)", value=16)
+    with col1:
+        st.metric("Tickets abiertos", len(df[df["Status"] == "Abierto"]))
+    with col2:
+        st.metric("Tickets de alta prioridad", len(df[df["Priority"] == "Alta"]))
+    with col3:
+        st.metric("Tickets sin asignar", len(df[df["Assigned To"] == "Sin asignar"]))
 
-    if len(st.session_state.df) > 0:
-        st.write("##### Ticket status per month")
-        status_plot = (
-            alt.Chart(st.session_state.df)
-            .mark_bar()
-            .encode(
-                x="month(Date Submitted):O",
-                y="count():Q",
-                xOffset="Status:N",
-                color="Status:N",
-            )
-        )
-        st.altair_chart(status_plot, use_container_width=True)
+    # Gráficos
+    st.subheader("Distribución por estado")
+    status_chart = alt.Chart(df).mark_bar().encode(
+        x="Status:N",
+        y="count():Q",
+        color="Status:N"
+    )
+    st.altair_chart(status_chart, use_container_width=True)
 
-        st.write("##### Current ticket priorities")
-        priority_plot = (
-            alt.Chart(st.session_state.df)
-            .mark_arc()
-            .encode(theta="count():Q", color="Priority:N")
-            .properties(height=300)
-        )
-        st.altair_chart(priority_plot, use_container_width=True)
-
-elif authentication_status is False:
-    st.error("Usuario o contraseña incorrectos")
-elif authentication_status is None:
-    st.warning("Por favor ingresa tus credenciales")
+else:
+    st.warning("No hay tickets registrados aún")
 
 
 
