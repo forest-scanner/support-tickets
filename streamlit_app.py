@@ -10,7 +10,6 @@ credentials = {
     "usernames": {
         "admin": {
             "name": "Administrador",
-            # Esta es la contraseña "gispro1977" hasheada (no se ve la clave en texto plano)
             "password": "$2b$12$UnXKo29nl.4qx1d4i7WuUOdzqdlE/rX/FLF2P7VrTL/pdQmn6ShQ2"
         }
     }
@@ -24,12 +23,12 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=1
 )
 
-# Mostrar formulario de login
-name, authentication_status, username = authenticator.login("Login", "main")
+# Login en barra lateral
+name, authentication_status, username = authenticator.login("Login", location="sidebar")
 
 if authentication_status:
     st.sidebar.success(f"Bienvenido {name} 👋")
-    authenticator.logout("Cerrar sesión", "sidebar")
+    authenticator.logout("Cerrar sesión", location="sidebar")
 
     # ======= APP DE TICKETS =======
     st.title("🎫 Support tickets")
@@ -136,6 +135,7 @@ elif authentication_status is False:
     st.error("Usuario o contraseña incorrectos")
 elif authentication_status is None:
     st.warning("Por favor ingresa tus credenciales")
+
 
 
 
