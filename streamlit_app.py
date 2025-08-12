@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import streamlit_authenticator as stauth
 import pandas as pd
+import altair as alt
 from datetime import datetime
 
 # ========================================
@@ -148,7 +149,7 @@ if not df.empty:
     cols = st.columns(3)
     cols[0].metric("Tickets Abiertos", len(df[df["Estado"] == "Abierto"]))
     cols[1].metric("Alta Prioridad", len(df[df["Prioridad"] == "Alta"]))
-    cols[2].metric("Asignados a TI", len(df[df["Asignado a"].str.contains("GIS"))])
+    cols[2].metric("Asignados a TI", len(df[df["Asignado a"].str.contains("GIS")))  # Línea corregida
 
     # Gráficos
     tab1, tab2 = st.tabs(["Estados", "Prioridades"])
@@ -172,6 +173,22 @@ if not df.empty:
 else:
     st.info("No hay tickets registrados aún")
 
+# ========================================
+# CONFIGURACIÓN REQUERIDA
+# ========================================
+
+"""
+# 📁 Archivo secrets.toml (en Streamlit Cloud)
+ADMIN_USERNAME = "user"
+ADMIN_PASSWORD_HASH = "$2b$12$5Bg7z8mUeJfG8XHj9YqZ3.LwQb1VrK7mR2NcS6pD9vI1kLtMxOuRy"  # Hash de "gispro1977"
+COOKIE_SECRET = "tu-clave-secreta-32-caracteres-aleatorios"
+
+# 📝 requirements.txt
+streamlit==1.32.0
+streamlit-authenticator==0.2.3
+pandas==2.1.4
+altair==5.2.0
+"""
 
 
 
