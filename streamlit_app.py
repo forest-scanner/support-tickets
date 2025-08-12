@@ -5,30 +5,28 @@ import altair as alt
 import streamlit as st
 import streamlit_authenticator as stauth
 
-# ===== CONFIGURACIÓN DE LOGIN =====
-# Generar contraseña encriptada (solo la primera vez, luego la puedes copiar)
-hashed_passwords = stauth.Hasher(['gispro1977']).generate()
-
+# Credenciales con contraseña ya encriptada (bcrypt)
 credentials = {
     "usernames": {
         "admin": {
             "name": "Administrador",
-            "password": hashed_passwords[0]
+            # Esta es la contraseña "gispro1977" hasheada (no se ve la clave en texto plano)
+            "password": "$2b$12$UnXKo29nl.4qx1d4i7WuUOdzqdlE/rX/FLF2P7VrTL/pdQmn6ShQ2"
         }
     }
 }
 
+# Crear autenticador
 authenticator = stauth.Authenticate(
     credentials,
     "ticket_app_cookie",   # nombre de la cookie
-    "abcdef",              # clave aleatoria de la cookie
+    "abcdef",              # clave secreta para la cookie
     cookie_expiry_days=1
 )
 
-# Formulario de login
+# Mostrar formulario de login
 name, authentication_status, username = authenticator.login("Login", "main")
 
-# Si el login es exitoso
 if authentication_status:
     st.sidebar.success(f"Bienvenido {name} 👋")
     authenticator.logout("Cerrar sesión", "sidebar")
@@ -134,12 +132,10 @@ if authentication_status:
         )
         st.altair_chart(priority_plot, use_container_width=True)
 
-# Si el login falla
 elif authentication_status is False:
     st.error("Usuario o contraseña incorrectos")
-
-# Si no se ha ingresado nada
 elif authentication_status is None:
     st.warning("Por favor ingresa tus credenciales")
+
 
 
