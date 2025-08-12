@@ -6,78 +6,71 @@ import altair as alt
 from datetime import datetime
 
 # ========================================
-# 1. CONFIGURACIÓN DE AUTENTICACIÓN (SECRETS)
+# 1. CONFIGURACIÓN DE AUTENTICACIÓN
 # ========================================
 
-# Configuración desde secrets.toml (Streamlit Cloud)
+# Configuración desde secrets.toml
 credentials = {
     "usernames": {
-        os.environ["ADMIN_USERNAME"]: {  # Usuario: "user"
+        os.environ["ADMIN_USERNAME"]: {
             "name": "Usuario GIS",
-            "password": os.environ["ADMIN_PASSWORD_HASH"]  # Hash de "gispro1977"
+            "password": os.environ["ADMIN_PASSWORD_HASH"]
         }
     }
 }
 
 authenticator = stauth.Authenticate(
     credentials,
-    cookie_name="gispro_auth_cookie",
-    key=os.environ["COOKIE_SECRET"],  # Clave de 32 caracteres
+    cookie_name="gispro_auth",
+    key=os.environ["COOKIE_SECRET"],
     cookie_expiry_days=7
 )
 
-# Login en sidebar
-name, auth_status, _ = authenticator.login("Acceso Sistema GIS", "sidebar")
+# Login
+name, auth_status, _ = authenticator.login("Acceso GIS Pro", "sidebar")
 
-# Validación de acceso
 if auth_status is False:
-    st.sidebar.error("❌ Usuario/contraseña incorrectos")
+    st.sidebar.error("❌ Credenciales incorrectas")
     st.stop()
 elif auth_status is None:
-    st.sidebar.warning("🔑 Ingrese sus credenciales")
+    st.sidebar.warning("🔑 Ingrese credenciales")
     st.stop()
 
 # ========================================
-# 2. APLICACIÓN PRINCIPAL (TICKETS)
+# 2. APLICACIÓN PRINCIPAL
 # ========================================
 
 st.sidebar.success(f"👋 ¡Bienvenido {name}!")
 authenticator.logout("Cerrar sesión", "sidebar")
 
-# --- Configuración del CSV ---
+# --- Configuración CSV ---
 CSV_FILE = "tickets_gispro.csv"
 if not os.path.exists(CSV_FILE):
-    df = pd.DataFrame(columns=[
-        "ID", "Título", "Descripción", "Estado", 
-        "Prioridad", "Fecha", "Asignado a"
-    ])
+    df = pd.DataFrame(columns=["ID", "Título", "Descripción", "Estado", "Prioridad", "Fecha", "Asignado a"])
 else:
     df = pd.read_csv(CSV_FILE)
 
-# --- Funciones clave ---
 def save_data():
     df.to_csv(CSV_FILE, index=False)
 
-# --- Interfaz de usuario ---
+# --- Interfaz ---
 st.title("🗺️ Sistema de Tickets GIS Pro")
-st.divider()
 
 # Formulario nuevo ticket
-with st.expander("➕ Crear Nuevo Ticket", expanded=True):
-    with st.form(key="nuevo_ticket_form"):
-        titulo = st.text_input("Título*", placeholder="Problema con capas WMS...")
-        descripcion = st.text_area("Descripción técnica*", height=150)
-        
+with st.expander("➕ Nuevo Ticket", expanded=True):
+    with st.form("nuevo_ticket_form"):
+        titulo = st.text_input("Título*")
+        descripcion = st.text_area("Descripción*", height=150)
         col1, col2 = st.columns(2)
         with col1:
             prioridad = st.selectbox("Prioridad*", ["Alta", "Media", "Baja"])
         with col2:
             asignado = st.text_input("Asignado a", "Equipo GIS")
         
-        if st.form_submit_button("📤 Guardar Ticket"):
+        if st.form_submit_button("📤 Guardar"):
             if titulo and descripcion:
                 nuevo_id = f"GIS-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                nuevo_ticket = {
+                df.loc[len(df)] = {
                     "ID": nuevo_id,
                     "Título": titulo,
                     "Descripción": descripcion,
@@ -86,28 +79,20 @@ with st.expander("➕ Crear Nuevo Ticket", expanded=True):
                     "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "Asignado a": asignado
                 }
-                df = pd.concat([df, pd.DataFrame([nuevo_ticket])], ignore_index=True)
                 save_data()
                 st.success(f"✅ Ticket {nuevo_id} creado!")
                 st.rerun()
-            else:
-                st.warning("⚠️ Complete los campos obligatorios")
 
 # Listado de tickets
 st.header("📋 Tickets Registrados")
-st.caption(f"Total: {len(df)} tickets")
-
 if not df.empty:
     # Filtros
-    estados = df["Estado"].unique()
-    prioridades = df["Prioridad"].unique()
+    col1, col2 = st.columns(2)
+    with col1:
+        filtro_estado = st.multiselect("Estado", df["Estado"].unique(), default=["Abierto"])
+    with col2:
+        filtro_prioridad = st.multiselect("Prioridad", df["Prioridad"].unique())
     
-    cols = st.columns(2)
-    with cols[0]:
-        filtro_estado = st.multiselect("Filtrar por estado", estados, default=["Abierto"])
-    with cols[1]:
-        filtro_prioridad = st.multiselect("Filtrar por prioridad", prioridades)
-
     # Aplicar filtros
     df_filtrado = df.copy()
     if filtro_estado:
@@ -115,26 +100,17 @@ if not df.empty:
     if filtro_prioridad:
         df_filtrado = df_filtrado[df_filtrado["Prioridad"].isin(filtro_prioridad)]
 
-    # Editor de datos
+    # Editor
     edited_df = st.data_editor(
         df_filtrado,
-        key="ticket_editor",
-        hide_index=True,
-        use_container_width=True,
         column_config={
             "ID": st.column_config.TextColumn(disabled=True),
-            "Fecha": st.column_config.DatetimeColumn(
-                "Fecha Creación",
-                format="DD/MM/YYYY HH:mm",
-                disabled=True
-            ),
-            "Estado": st.column_config.SelectboxColumn(
-                options=["Abierto", "En progreso", "Resuelto", "Cerrado"]
-            ),
-            "Prioridad": st.column_config.SelectboxColumn(
-                options=["Alta", "Media", "Baja"]
-            )
-        }
+            "Fecha": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm", disabled=True),
+            "Estado": st.column_config.SelectboxColumn(options=["Abierto", "En progreso", "Resuelto"]),
+            "Prioridad": st.column_config.SelectboxColumn(options=["Alta", "Media", "Baja"])
+        },
+        hide_index=True,
+        use_container_width=True
     )
 
     # Guardar cambios
@@ -143,45 +119,35 @@ if not df.empty:
         save_data()
         st.rerun()
 
-# Métricas
+# Métricas CORREGIDAS
 st.header("📊 Dashboard")
 if not df.empty:
     cols = st.columns(3)
-    cols[0].metric("Tickets Abiertos", len(df[df["Estado"] == "Abierto"]))
+    cols[0].metric("Abiertos", len(df[df["Estado"] == "Abierto"]))
     cols[1].metric("Alta Prioridad", len(df[df["Prioridad"] == "Alta"]))
-    cols[2].metric("Asignados a TI", len(df[df["Asignado a"].str.contains("GIS")))  # Línea corregida
+    cols[2].metric("Asignados", len(df[df["Asignado a"] == "Equipo GIS"]))  # Versión simplificada y corregida
 
     # Gráficos
-    tab1, tab2 = st.tabs(["Estados", "Prioridades"])
-    with tab1:
-        st.altair_chart(
-            alt.Chart(df).mark_bar().encode(
-                x="Estado:N",
-                y="count():Q",
-                color="Estado:N"
-            ),
-            use_container_width=True
-        )
-    with tab2:
-        st.altair_chart(
-            alt.Chart(df).mark_arc().encode(
-                theta="count():Q",
-                color="Prioridad:N"
-            ),
-            use_container_width=True
-        )
+    st.altair_chart(
+        alt.Chart(df).mark_bar().encode(
+            x="Estado:N",
+            y="count():Q",
+            color="Estado:N"
+        ),
+        use_container_width=True
+    )
 else:
-    st.info("No hay tickets registrados aún")
+    st.info("No hay tickets registrados")
 
 # ========================================
 # CONFIGURACIÓN REQUERIDA
 # ========================================
 
 """
-# 📁 Archivo secrets.toml (en Streamlit Cloud)
+# 📁 secrets.toml
 ADMIN_USERNAME = "user"
-ADMIN_PASSWORD_HASH = "$2b$12$5Bg7z8mUeJfG8XHj9YqZ3.LwQb1VrK7mR2NcS6pD9vI1kLtMxOuRy"  # Hash de "gispro1977"
-COOKIE_SECRET = "tu-clave-secreta-32-caracteres-aleatorios"
+ADMIN_PASSWORD_HASH = "$2b$12$..."  # Hash de tu contraseña
+COOKIE_SECRET = "clave-secreta-32-caracteres"
 
 # 📝 requirements.txt
 streamlit==1.32.0
