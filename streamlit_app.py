@@ -128,17 +128,17 @@ def app():
                 descripcion = st.text_area("Descripción detallada*")
                 solicitante = st.text_input("Solicitante*")
                 departamento = st.selectbox("Departamento", 
-                                          ["TI", "Ventas", "Operaciones", "RRHH", "Finanzas"])
+                                          ["GIS", "TOPOGRAFIA", "REVISION CAMPO", "ARBORICULTURA", "SERVICIOS"])
             
             with col2:
                 prioridad = st.selectbox("Prioridad*", ["Alta", "Media", "Baja"])
                 categoria = st.selectbox("Categoría", 
-                                        ["Hardware", "Software", "Redes", "Consulta", "Otro"])
+                                        ["Corrección_GIS", "Revision_Campo", "Plantaciones/Talas", "Actuaciones", "Otro"])
                 fecha_limite = st.date_input("Fecha Límite*", 
                                            min_value=date.today(),
                                            value=date.today() + datetime.timedelta(days=3))
                 asignado_a = st.selectbox("Asignado a*", 
-                                        ["Equipo TI", "Equipo Soporte", "Equipo Desarrollo", "Sin asignar"])
+                                        ["Rubén/Sandra", "Equipo Topografia", "Francisco Sanchez", "Estefania"])
             
             submitted = st.form_submit_button("Guardar Ticket")
             
