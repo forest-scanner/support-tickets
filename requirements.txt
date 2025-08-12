@@ -1,5 +1,4 @@
 streamlit
-pandas
-numpy
-altair
-streamlit-authenticator==0.2.3
+pandas==2.1.4
+altair==5.2.0
+numpy==1.26.0
