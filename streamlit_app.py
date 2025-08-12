@@ -1,85 +1,50 @@
 import datetime
 import random
-
 import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+import os
 
-# Show app title and description.
+# Nombre del archivo CSV
+CSV_FILE = "tickets.csv"
+
+# Configuración de la página
 st.set_page_config(page_title="Support tickets", page_icon="🎫")
 st.title("🎫 Support tickets")
 st.write(
     """
-    This app shows how you can build an internal tool in Streamlit. Here, we are 
-    implementing a support ticket workflow. The user can create a ticket, edit 
-    existing tickets, and view some statistics.
+    Esta aplicación permite crear, editar y visualizar tickets de soporte.
+    Ahora los datos se guardan en un archivo CSV para que no se pierdan al reiniciar.
     """
 )
 
-# Create a random Pandas dataframe with existing tickets.
-if "df" not in st.session_state:
+# Cargar datos desde CSV si existe
+if os.path.exists(CSV_FILE):
+    df = pd.read_csv(CSV_FILE)
+else:
+    df = pd.DataFrame(columns=["ID", "Issue", "Status", "Priority", "Date Submitted"])
 
-    # Set seed for reproducibility.
-    np.random.seed(42)
+st.session_state.df = df.copy()
 
-    # Make up some fake issue descriptions.
-    issue_descriptions = [
-        "Network connectivity issues in the office",
-        "Software application crashing on startup",
-        "Printer not responding to print commands",
-        "Email server downtime",
-        "Data backup failure",
-        "Login authentication problems",
-        "Website performance degradation",
-        "Security vulnerability identified",
-        "Hardware malfunction in the server room",
-        "Employee unable to access shared files",
-        "Database connection failure",
-        "Mobile application not syncing data",
-        "VoIP phone system issues",
-        "VPN connection problems for remote employees",
-        "System updates causing compatibility issues",
-        "File server running out of storage space",
-        "Intrusion detection system alerts",
-        "Inventory management system errors",
-        "Customer data not loading in CRM",
-        "Collaboration tool not sending notifications",
-    ]
+# Función para guardar en CSV
+def save_to_csv(dataframe):
+    dataframe.to_csv(CSV_FILE, index=False)
 
-    # Generate the dataframe with 100 rows/tickets.
-    data = {
-        "ID": [f"TICKET-{i}" for i in range(1100, 1000, -1)],
-        "Issue": np.random.choice(issue_descriptions, size=100),
-        "Status": np.random.choice(["Open", "In Progress", "Closed"], size=100),
-        "Priority": np.random.choice(["High", "Medium", "Low"], size=100),
-        "Date Submitted": [
-            datetime.date(2023, 6, 1) + datetime.timedelta(days=random.randint(0, 182))
-            for _ in range(100)
-        ],
-    }
-    df = pd.DataFrame(data)
-
-    # Save the dataframe in session state (a dictionary-like object that persists across
-    # page runs). This ensures our data is persisted when the app updates.
-    st.session_state.df = df
-
-
-# Show a section to add a new ticket.
+# Sección para agregar un nuevo ticket
 st.header("Add a ticket")
-
-# We're adding tickets via an `st.form` and some input widgets. If widgets are used
-# in a form, the app will only rerun once the submit button is pressed.
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
     submitted = st.form_submit_button("Submit")
 
-if submitted:
-    # Make a dataframe for the new ticket and append it to the dataframe in session
-    # state.
-    recent_ticket_number = int(max(st.session_state.df.ID).split("-")[1])
-    today = datetime.datetime.now().strftime("%m-%d-%Y")
+if submitted and issue.strip():
+    if len(st.session_state.df) == 0:
+        recent_ticket_number = 1000
+    else:
+        recent_ticket_number = int(max(st.session_state.df.ID).split("-")[1])
+
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
     df_new = pd.DataFrame(
         [
             {
@@ -92,23 +57,16 @@ if submitted:
         ]
     )
 
-    # Show a little success message.
-    st.write("Ticket submitted! Here are the ticket details:")
-    st.dataframe(df_new, use_container_width=True, hide_index=True)
     st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
+    save_to_csv(st.session_state.df)
 
-# Show section to view and edit existing tickets in a table.
+    st.success("✅ Ticket submitted!")
+    st.dataframe(df_new, use_container_width=True, hide_index=True)
+
+# Sección para ver y editar tickets
 st.header("Existing tickets")
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
 
-st.info(
-    "You can edit the tickets by double clicking on a cell. Note how the plots below "
-    "update automatically! You can also sort the table by clicking on the column headers.",
-    icon="✍️",
-)
-
-# Show the tickets dataframe with `st.data_editor`. This lets the user edit the table
-# cells. The edited data is returned as a new dataframe.
 edited_df = st.data_editor(
     st.session_state.df,
     use_container_width=True,
@@ -127,46 +85,43 @@ edited_df = st.data_editor(
             required=True,
         ),
     },
-    # Disable editing the ID and Date Submitted columns.
     disabled=["ID", "Date Submitted"],
 )
 
-# Show some metrics and charts about the ticket.
-st.header("Statistics")
+# Guardar cambios en el CSV cuando se edite
+if not edited_df.equals(st.session_state.df):
+    st.session_state.df = edited_df
+    save_to_csv(edited_df)
+    st.info("💾 Changes saved to CSV.")
 
-# Show metrics side by side using `st.columns` and `st.metric`.
+# Métricas y gráficos
+st.header("Statistics")
 col1, col2, col3 = st.columns(3)
 num_open_tickets = len(st.session_state.df[st.session_state.df.Status == "Open"])
-col1.metric(label="Number of open tickets", value=num_open_tickets, delta=10)
-col2.metric(label="First response time (hours)", value=5.2, delta=-1.5)
-col3.metric(label="Average resolution time (hours)", value=16, delta=2)
+col1.metric(label="Number of open tickets", value=num_open_tickets)
+col2.metric(label="First response time (hours)", value=5.2)
+col3.metric(label="Average resolution time (hours)", value=16)
 
-# Show two Altair charts using `st.altair_chart`.
-st.write("")
-st.write("##### Ticket status per month")
-status_plot = (
-    alt.Chart(edited_df)
-    .mark_bar()
-    .encode(
-        x="month(Date Submitted):O",
-        y="count():Q",
-        xOffset="Status:N",
-        color="Status:N",
+if len(st.session_state.df) > 0:
+    st.write("##### Ticket status per month")
+    status_plot = (
+        alt.Chart(st.session_state.df)
+        .mark_bar()
+        .encode(
+            x="month(Date Submitted):O",
+            y="count():Q",
+            xOffset="Status:N",
+            color="Status:N",
+        )
     )
-    .configure_legend(
-        orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
-    )
-)
-st.altair_chart(status_plot, use_container_width=True, theme="streamlit")
+    st.altair_chart(status_plot, use_container_width=True)
 
-st.write("##### Current ticket priorities")
-priority_plot = (
-    alt.Chart(edited_df)
-    .mark_arc()
-    .encode(theta="count():Q", color="Priority:N")
-    .properties(height=300)
-    .configure_legend(
-        orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
+    st.write("##### Current ticket priorities")
+    priority_plot = (
+        alt.Chart(st.session_state.df)
+        .mark_arc()
+        .encode(theta="count():Q", color="Priority:N")
+        .properties(height=300)
     )
-)
-st.altair_chart(priority_plot, use_container_width=True, theme="streamlit")
+    st.altair_chart(priority_plot, use_container_width=True)
+
