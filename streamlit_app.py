@@ -9,13 +9,14 @@ import streamlit as st
 # Configuración de la página
 st.set_page_config(page_title="Support Tickets", page_icon="🎫")
 
-# Clave secreta para JWT (en producción, usar variable de entorno)
-SECRET = "tu_clave_secreta_muy_larga"
+# Configuración desde secrets.toml
+SECRET = st.secrets.get("COOKIE_SECRET", "default_secret_key_32_chars_long_1234")
+ADMIN_USERNAME = st.secrets.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD_HASH = st.secrets.get("ADMIN_PASSWORD_HASH", "").encode()
 
 # Simulación de base de datos de usuarios
 users_db = {
-    "estefania": bcrypt.hashpw("miClaveSegura".encode(), bcrypt.gensalt()),
-    "admin": bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
+    ADMIN_USERNAME: ADMIN_PASSWORD_HASH,
 }
 
 # Verificar usuario y contraseña
@@ -36,7 +37,7 @@ def login():
             st.session_state.token = token
             st.session_state.logged_in = True
             st.session_state.usuario = usuario
-            st.success(f"✅ Bienvenida, {usuario}")
+            st.success(f"✅ Bienvenido/a, {usuario}")
             st.balloons()
         else:
             st.error("❌ Usuario o contraseña incorrectos")
@@ -69,179 +70,229 @@ def app():
     st.title("🎫 Support Tickets")
     st.write("Gestión de tickets de soporte con almacenamiento en CSV.")
 
+    # Columnas iniciales (incluyendo las nuevas)
+    initial_columns = [
+        "ID", "Issue", "Status", "Priority", "Date Submitted", 
+        "Procedencia", "Fecha Límite", "Asignado a"
+    ]
+
     # Cargar datos
     if os.path.exists(CSV_FILE):
         df = pd.read_csv(CSV_FILE)
-        # Convertir fechas a datetime si ya existen
-        if 'Date Submitted' in df.columns:
-            df['Date Submitted'] = pd.to_datetime(df['Date Submitted'])
-        if 'Fecha Límite' in df.columns:
-            df['Fecha Límite'] = pd.to_datetime(df['Fecha Límite'])
+        # Asegurar que todas las columnas necesarias existan
+        for col in initial_columns:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Convertir fechas a datetime
+        date_columns = ['Date Submitted', 'Fecha Límite']
+        for col in date_columns:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col])
     else:
-        df = pd.DataFrame(columns=[
-            "ID", "Issue", "Status", "Priority", "Date Submitted", 
-            "Procedencia", "Fecha Límite"
-        ])
+        df = pd.DataFrame(columns=initial_columns)
 
-    st.session_state.df = df.copy()
+    st.session_state.df = df
 
     # Añadir ticket
-    st.header("Add a ticket")
+    st.header("Añadir nuevo ticket")
     with st.form("add_ticket_form"):
-        issue = st.text_area("Describe the issue")
-        priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+        issue = st.text_area("Descripción del problema")
+        priority = st.selectbox("Prioridad", ["Alta", "Media", "Baja"])
         procedencia = st.text_input("Procedencia (Persona que solicita)")
         fecha_limite = st.date_input("Fecha límite de realización", 
                                    min_value=datetime.date.today())
-        submitted = st.form_submit_button("Submit")
+        asignado_a = st.selectbox("Asignado a", ["Equipo A", "Equipo B", "Equipo C", "Sin asignar"])
+        submitted = st.form_submit_button("Enviar ticket")
 
     if submitted and issue.strip():
         if len(st.session_state.df) == 0:
             recent_ticket_number = 1000
         else:
-            recent_ticket_number = int(max(st.session_state.df.ID).split("-")[1])
+            # Manejar caso cuando no hay tickets aún
+            try:
+                recent_ticket_number = int(max(st.session_state.df['ID'].dropna()).split("-")[1])
+            except:
+                recent_ticket_number = 1000
 
         today = datetime.datetime.now().strftime("%Y-%m-%d")
         df_new = pd.DataFrame([{
             "ID": f"TICKET-{recent_ticket_number+1}",
             "Issue": issue,
-            "Status": "Open",
+            "Status": "Abierto",
             "Priority": priority,
             "Date Submitted": today,
             "Procedencia": procedencia,
             "Fecha Límite": fecha_limite.strftime("%Y-%m-%d"),
+            "Asignado a": asignado_a
         }])
 
-        st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
+        st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0, ignore_index=True)
         save_to_csv(st.session_state.df)
 
-        st.success("✅ Ticket submitted!")
+        st.success("✅ Ticket enviado correctamente!")
         st.dataframe(df_new, use_container_width=True, hide_index=True)
 
-    # Filtros
+    # Filtros - Solo mostrar si hay datos
     st.header("Filtrar Tickets")
-    col1, col2, col3 = st.columns(3)
     
-    with col1:
-        filter_status = st.multiselect(
-            "Filtrar por Estado",
-            options=st.session_state.df['Status'].unique(),
-            default=st.session_state.df['Status'].unique()
-        )
-    
-    with col2:
-        filter_procedencia = st.multiselect(
-            "Filtrar por Procedencia",
-            options=st.session_state.df['Procedencia'].unique(),
-            default=st.session_state.df['Procedencia'].unique()
-        )
-    
-    with col3:
-        min_date = st.session_state.df['Fecha Límite'].min() if 'Fecha Límite' in st.session_state.df else datetime.date.today()
-        max_date = st.session_state.df['Fecha Límite'].max() if 'Fecha Límite' in st.session_state.df else datetime.date.today() + datetime.timedelta(days=30)
-        date_range = st.date_input(
-            "Filtrar por Rango de Fechas Límite",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date
-        )
-    
-    # Aplicar filtros
-    filtered_df = st.session_state.df.copy()
-    
-    if filter_status:
-        filtered_df = filtered_df[filtered_df['Status'].isin(filter_status)]
-    
-    if filter_procedencia:
-        filtered_df = filtered_df[filtered_df['Procedencia'].isin(filter_procedencia)]
-    
-    if len(date_range) == 2:
-        start_date, end_date = date_range
-        filtered_df = filtered_df[
-            (filtered_df['Fecha Límite'] >= pd.to_datetime(start_date)) & 
-            (filtered_df['Fecha Límite'] <= pd.to_datetime(end_date))
-        ]
+    if not st.session_state.df.empty:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            status_options = st.session_state.df['Status'].dropna().unique()
+            filter_status = st.multiselect(
+                "Estado",
+                options=status_options,
+                default=["Abierto"] if "Abierto" in status_options else []
+            )
+        
+        with col2:
+            if 'Procedencia' in st.session_state.df.columns:
+                procedencia_options = st.session_state.df['Procedencia'].dropna().unique()
+                filter_procedencia = st.multiselect(
+                    "Procedencia",
+                    options=procedencia_options,
+                    default=procedencia_options
+                )
+            else:
+                filter_procedencia = []
+                st.warning("No hay datos de procedencia")
+        
+        with col3:
+            if 'Fecha Límite' in st.session_state.df.columns:
+                min_date = st.session_state.df['Fecha Límite'].min().date()
+                max_date = st.session_state.df['Fecha Límite'].max().date()
+                date_range = st.date_input(
+                    "Rango de fechas límite",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date
+                )
+            else:
+                date_range = []
+                st.warning("No hay datos de fechas límite")
+        
+        # Aplicar filtros
+        filtered_df = st.session_state.df.copy()
+        
+        if filter_status:
+            filtered_df = filtered_df[filtered_df['Status'].isin(filter_status)]
+        
+        if 'Procedencia' in filtered_df.columns and filter_procedencia:
+            filtered_df = filtered_df[filtered_df['Procedencia'].isin(filter_procedencia)]
+        
+        if 'Fecha Límite' in filtered_df.columns and len(date_range) == 2:
+            start_date, end_date = date_range
+            filtered_df = filtered_df[
+                (filtered_df['Fecha Límite'] >= pd.to_datetime(start_date)) & 
+                (filtered_df['Fecha Límite'] <= pd.to_datetime(end_date))
+            ]
+    else:
+        filtered_df = pd.DataFrame(columns=initial_columns)
+        st.warning("No hay tickets disponibles")
 
     # Editar tickets
-    st.header("Existing tickets")
-    st.write(f"Number of tickets: `{len(filtered_df)}` (de `{len(st.session_state.df)}` totales)")
+    st.header("Tickets existentes")
+    st.write(f"Número de tickets: `{len(filtered_df)}` (de `{len(st.session_state.df)}` totales)")
 
-    edited_df = st.data_editor(
-        filtered_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Status": st.column_config.SelectboxColumn(
-                "Status", options=["Open", "In Progress", "Closed"], required=True),
-            "Priority": st.column_config.SelectboxColumn(
-                "Priority", options=["High", "Medium", "Low"], required=True),
-            "Fecha Límite": st.column_config.DateColumn(
-                "Fecha Límite", format="YYYY-MM-DD", required=True),
-        },
-        disabled=["ID", "Date Submitted", "Procedencia"],
-    )
+    if not filtered_df.empty:
+        edited_df = st.data_editor(
+            filtered_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Status": st.column_config.SelectboxColumn(
+                    "Estado", options=["Abierto", "En progreso", "Cerrado"], required=True),
+                "Priority": st.column_config.SelectboxColumn(
+                    "Prioridad", options=["Alta", "Media", "Baja"], required=True),
+                "Fecha Límite": st.column_config.DateColumn(
+                    "Fecha Límite", format="YYYY-MM-DD", required=True),
+                "Asignado a": st.column_config.SelectboxColumn(
+                    "Asignado a", options=["Equipo A", "Equipo B", "Equipo C", "Sin asignar"], required=True),
+            },
+            disabled=["ID", "Date Submitted", "Procedencia"],
+        )
 
-    if not edited_df.equals(filtered_df):
-        # Actualizar el dataframe original con los cambios
-        updated_df = st.session_state.df.copy()
-        for idx, row in edited_df.iterrows():
-            updated_df.loc[updated_df['ID'] == row['ID'], ['Status', 'Priority', 'Fecha Límite']] = row[['Status', 'Priority', 'Fecha Límite']]
-        
-        st.session_state.df = updated_df
-        save_to_csv(updated_df)
-        st.info("💾 Changes saved to CSV.")
+        if not edited_df.equals(filtered_df):
+            # Actualizar el dataframe original con los cambios
+            updated_df = st.session_state.df.copy()
+            for idx, row in edited_df.iterrows():
+                mask = updated_df['ID'] == row['ID']
+                updated_df.loc[mask, ['Status', 'Priority', 'Fecha Límite', 'Asignado a']] = row[['Status', 'Priority', 'Fecha Límite', 'Asignado a']]
+            
+            st.session_state.df = updated_df
+            save_to_csv(updated_df)
+            st.info("💾 Cambios guardados correctamente.")
+    else:
+        st.warning("No hay tickets para mostrar con los filtros actuales")
 
     # Estadísticas
-    st.header("Statistics")
-    col1, col2, col3 = st.columns(3)
-    num_open = len(filtered_df[filtered_df.Status == "Open"])
-    col1.metric("Open tickets", num_open)
+    st.header("Estadísticas")
     
-    # Calcular días hasta fecha límite para tickets abiertos
     if not filtered_df.empty:
-        today = pd.to_datetime(datetime.date.today())
-        filtered_df['Días Restantes'] = (pd.to_datetime(filtered_df['Fecha Límite']) - today).dt.days
-        avg_days_remaining = filtered_df['Días Restantes'].mean()
-        col2.metric("Avg days to deadline", f"{avg_days_remaining:.1f}")
+        col1, col2, col3 = st.columns(3)
+        
+        # Tickets abiertos
+        num_open = len(filtered_df[filtered_df['Status'] == "Abierto"]) if 'Status' in filtered_df.columns else 0
+        col1.metric("Tickets abiertos", num_open)
+        
+        # Días hasta fecha límite
+        if 'Fecha Límite' in filtered_df.columns:
+            today = pd.to_datetime(datetime.date.today())
+            filtered_df['Días Restantes'] = (pd.to_datetime(filtered_df['Fecha Límite']) - today).dt.days
+            avg_days_remaining = filtered_df['Días Restantes'].mean()
+            col2.metric("Días promedio hasta límite", f"{avg_days_remaining:.1f}")
+        else:
+            col2.metric("Días promedio hasta límite", "N/A")
+        
+        # Tickets vencidos
+        if 'Fecha Límite' in filtered_df.columns and 'Status' in filtered_df.columns:
+            overdue = filtered_df[(filtered_df['Status'] != 'Cerrado') & 
+                                 (filtered_df['Fecha Límite'] < pd.to_datetime(datetime.date.today()))]
+            col3.metric("Tickets vencidos", len(overdue))
+        else:
+            col3.metric("Tickets vencidos", "N/A")
+
+        # Gráficos
+        if len(filtered_df) > 0:
+            st.write("##### Tickets por estado (mensual)")
+            if 'Date Submitted' in filtered_df.columns:
+                status_plot = (
+                    alt.Chart(filtered_df)
+                    .mark_bar()
+                    .encode(
+                        x="month(Date Submitted):O",
+                        y="count():Q",
+                        xOffset="Status:N",
+                        color="Status:N",
+                    )
+                )
+                st.altair_chart(status_plot, use_container_width=True)
+
+            st.write("##### Distribución de prioridades")
+            priority_plot = (
+                alt.Chart(filtered_df)
+                .mark_arc()
+                .encode(theta="count():Q", color="Priority:N")
+                .properties(height=300)
+            )
+            st.altair_chart(priority_plot, use_container_width=True)
+
+            if 'Procedencia' in filtered_df.columns:
+                st.write("##### Tickets por procedencia")
+                procedencia_plot = (
+                    alt.Chart(filtered_df)
+                    .mark_bar()
+                    .encode(
+                        x="count():Q",
+                        y="Procedencia:N",
+                        color="Status:N"
+                    )
+                )
+                st.altair_chart(procedencia_plot, use_container_width=True)
     else:
-        col2.metric("Avg days to deadline", "N/A")
-    
-    col3.metric("Avg resolution time (hrs)", 16)
-
-    if len(filtered_df) > 0:
-        st.write("##### Ticket status per month")
-        status_plot = (
-            alt.Chart(filtered_df)
-            .mark_bar()
-            .encode(
-                x="month(Date Submitted):O",
-                y="count():Q",
-                xOffset="Status:N",
-                color="Status:N",
-            )
-        )
-        st.altair_chart(status_plot, use_container_width=True)
-
-        st.write("##### Current ticket priorities")
-        priority_plot = (
-            alt.Chart(filtered_df)
-            .mark_arc()
-            .encode(theta="count():Q", color="Priority:N")
-            .properties(height=300)
-        )
-        st.altair_chart(priority_plot, use_container_width=True)
-
-        st.write("##### Tickets by Procedencia")
-        procedencia_plot = (
-            alt.Chart(filtered_df)
-            .mark_bar()
-            .encode(
-                x="count():Q",
-                y="Procedencia:N",
-                color="Status:N"
-            )
-        )
-        st.altair_chart(procedencia_plot, use_container_width=True)
+        st.warning("No hay datos para mostrar estadísticas")
 
 # Verificar token si existe
 if "token" in st.session_state:
