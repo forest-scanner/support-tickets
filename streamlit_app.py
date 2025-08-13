@@ -217,6 +217,16 @@ def app():
             filtered_df = filtered_df[filtered_df['Prioridad'].isin(filtro_prioridad)]
         if filtro_departamento:
             filtered_df = filtered_df[filtered_df['Departamento'].isin(filtro_departamento)]
+
+        
+        # --- Normalizar tipos para evitar errores en data_editor ---
+        if "Fecha Límite" in filtered_df.columns:
+            filtered_df["Fecha Límite"] = pd.to_datetime(filtered_df["Fecha Límite"], errors="coerce")
+            filtered_df["Fecha Límite"] = filtered_df["Fecha Límite"].fillna(pd.Timestamp.today())
+        
+        for col in ["Estado", "Prioridad", "Asignado a"]:
+            if col in filtered_df.columns:
+                filtered_df[col] = filtered_df[col].astype(str)
         
         # Mostrar tickets
         if not filtered_df.empty:
