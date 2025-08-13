@@ -180,26 +180,33 @@ def app():
     elif menu == "Ver Tickets":
         st.header("📋 Listado de Tickets")
         
-        # Filtros
+        # Filtros seguros
         with st.expander("🔍 Filtros Avanzados"):
             cols = st.columns(3)
+
             with cols[0]:
+                opciones_estado = st.session_state.df['Estado'].unique().tolist() if 'Estado' in st.session_state.df else []
+                valores_default_estado = [v for v in ["Abierto"] if v in opciones_estado]
                 filtro_estado = st.multiselect(
                     "Estado",
-                    options=st.session_state.df['Estado'].unique() if 'Estado' in st.session_state.df else [],
-                    default=["Abierto"] if 'Estado' in st.session_state.df else []
+                    options=opciones_estado,
+                    default=valores_default_estado
                 )
+
             with cols[1]:
+                opciones_prioridad = st.session_state.df['Prioridad'].unique().tolist() if 'Prioridad' in st.session_state.df else []
                 filtro_prioridad = st.multiselect(
                     "Prioridad",
-                    options=st.session_state.df['Prioridad'].unique() if 'Prioridad' in st.session_state.df else [],
-                    default=st.session_state.df['Prioridad'].unique() if 'Prioridad' in st.session_state.df else []
+                    options=opciones_prioridad,
+                    default=opciones_prioridad
                 )
+
             with cols[2]:
+                opciones_departamento = st.session_state.df['Departamento'].unique().tolist() if 'Departamento' in st.session_state.df else []
                 filtro_departamento = st.multiselect(
                     "Departamento",
-                    options=st.session_state.df['Departamento'].unique() if 'Departamento' in st.session_state.df else [],
-                    default=st.session_state.df['Departamento'].unique() if 'Departamento' in st.session_state.df else []
+                    options=opciones_departamento,
+                    default=opciones_departamento
                 )
         
         # Aplicar filtros
