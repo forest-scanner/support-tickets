@@ -96,7 +96,7 @@ def load_or_init_data():
             date_cols = ['Fecha Creación', 'Fecha Límite']
             for col in date_cols:
                 if col in df.columns:
-                    df[col] = pd.to_datetime(df[col])
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
             return df
         except:
             return init_dataframe()
@@ -116,6 +116,11 @@ def app():
         st.header("Opciones")
         menu = st.radio("Seleccione una opción:", 
                         ["Nuevo Ticket", "Ver Tickets", "Estadísticas", "Configuración"])
+    
+    # Lista unificada de asignaciones
+    asignaciones_base = ["Rubén/Sandra", "Equipo Topografia", "Francisco Sanchez", "Estefania", 
+                         "Equipo TI", "Equipo Soporte", "Equipo Desarrollo", "Sin asignar"]
+    asignaciones = sorted(set(asignaciones_base + st.session_state.df.get('Asignado a', pd.Series()).dropna().unique().tolist()))
     
     # Sección de Nuevo Ticket
     if menu == "Nuevo Ticket":
@@ -137,8 +142,7 @@ def app():
                 fecha_limite = st.date_input("Fecha Límite*", 
                                            min_value=date.today(),
                                            value=date.today() + datetime.timedelta(days=3))
-                asignado_a = st.selectbox("Asignado a*", 
-                                        ["Rubén/Sandra", "Equipo Topografia", "Francisco Sanchez", "Estefania"])
+                asignado_a = st.selectbox("Asignado a*", asignaciones)
             
             submitted = st.form_submit_button("Guardar Ticket")
             
@@ -185,7 +189,7 @@ def app():
             cols = st.columns(3)
 
             with cols[0]:
-                opciones_estado = st.session_state.df['Estado'].unique().tolist() if 'Estado' in st.session_state.df else []
+                opciones_estado = st.session_state.df['Estado'].dropna().unique().tolist() if 'Estado' in st.session_state.df else []
                 valores_default_estado = [v for v in ["Abierto"] if v in opciones_estado]
                 filtro_estado = st.multiselect(
                     "Estado",
@@ -194,7 +198,7 @@ def app():
                 )
 
             with cols[1]:
-                opciones_prioridad = st.session_state.df['Prioridad'].unique().tolist() if 'Prioridad' in st.session_state.df else []
+                opciones_prioridad = st.session_state.df['Prioridad'].dropna().unique().tolist() if 'Prioridad' in st.session_state.df else []
                 filtro_prioridad = st.multiselect(
                     "Prioridad",
                     options=opciones_prioridad,
@@ -202,7 +206,7 @@ def app():
                 )
 
             with cols[2]:
-                opciones_departamento = st.session_state.df['Departamento'].unique().tolist() if 'Departamento' in st.session_state.df else []
+                opciones_departamento = st.session_state.df['Departamento'].dropna().unique().tolist() if 'Departamento' in st.session_state.df else []
                 filtro_departamento = st.multiselect(
                     "Departamento",
                     options=opciones_departamento,
@@ -218,8 +222,7 @@ def app():
         if filtro_departamento:
             filtered_df = filtered_df[filtered_df['Departamento'].isin(filtro_departamento)]
 
-        
-        # --- Normalizar tipos para evitar errores en data_editor ---
+        # Normalizar tipos antes de data_editor
         if "Fecha Límite" in filtered_df.columns:
             filtered_df["Fecha Límite"] = pd.to_datetime(filtered_df["Fecha Límite"], errors="coerce")
             filtered_df["Fecha Límite"] = filtered_df["Fecha Límite"].fillna(pd.Timestamp.today())
@@ -232,7 +235,6 @@ def app():
         if not filtered_df.empty:
             st.write(f"Mostrando {len(filtered_df)} de {len(st.session_state.df)} tickets")
             
-            # Editor de tickets
             edited_df = st.data_editor(
                 filtered_df,
                 use_container_width=True,
@@ -255,7 +257,7 @@ def app():
                     ),
                     "Asignado a": st.column_config.SelectboxColumn(
                         "Asignado a", 
-                        options=["Equipo TI", "Equipo Soporte", "Equipo Desarrollo", "Sin asignar"], 
+                        options=asignaciones,
                         required=True
                     ),
                 },
@@ -263,7 +265,6 @@ def app():
                 key="ticket_editor"
             )
             
-            # Guardar cambios
             if not edited_df.equals(filtered_df):
                 st.session_state.df.update(edited_df)
                 save_to_csv(st.session_state.df)
@@ -276,13 +277,10 @@ def app():
         st.header("📊 Estadísticas de Tickets")
         
         if not st.session_state.df.empty:
-            # Métricas rápidas
             col1, col2, col3 = st.columns(3)
             col1.metric("Total Tickets", len(st.session_state.df))
-            col2.metric("Tickets Abiertos", 
-                        len(st.session_state.df[st.session_state.df['Estado'] == "Abierto"]))
+            col2.metric("Tickets Abiertos", len(st.session_state.df[st.session_state.df['Estado'] == "Abierto"]))
             
-            # Calcular tickets vencidos
             if 'Fecha Límite' in st.session_state.df.columns:
                 hoy = pd.to_datetime(date.today())
                 vencidos = st.session_state.df[
@@ -291,7 +289,6 @@ def app():
                 ]
                 col3.metric("Tickets Vencidos", len(vencidos))
             
-            # Gráficos
             tab1, tab2, tab3 = st.tabs(["Por Estado", "Por Prioridad", "Por Departamento"])
             
             with tab1:
