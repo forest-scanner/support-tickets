@@ -29,12 +29,14 @@ def get_gsheet():
         return None
 
 def load_data():
+    """Carga datos desde Google Sheets"""
     sheet = get_gsheet()
     if sheet:
         try:
             data = sheet.get_all_records()
             if data:
                 df = pd.DataFrame(data)
+                # Convertir columnas de fecha a datetime
                 for col in ["Fecha Creación", "Fecha Límite"]:
                     if col in df.columns:
                         df[col] = pd.to_datetime(df[col], errors="coerce")
@@ -43,18 +45,23 @@ def load_data():
             st.warning(f"Error al leer Google Sheets: {e}")
     return init_dataframe()
 
+
 def save_data(df):
+    """Guarda DataFrame en Google Sheets"""
     sheet = get_gsheet()
     if sheet:
         try:
             df_to_save = df.copy()
+            # Asegurarse de que las columnas de fecha sean strings
             for col in ["Fecha Creación", "Fecha Límite"]:
                 if col in df_to_save.columns:
-                    df_to_save[col] = df_to_save[col].dt.strftime("%Y-%m-%d")  # Convertir a string
+                    df_to_save[col] = pd.to_datetime(df_to_save[col], errors="coerce")
+                    df_to_save[col] = df_to_save[col].dt.strftime("%Y-%m-%d").fillna("")
             sheet.clear()
             sheet.update([df_to_save.columns.values.tolist()] + df_to_save.values.tolist())
         except Exception as e:
             st.error(f"No se pudo guardar en Google Sheets: {e}")
+
 
 
 # ================= Configuración JWT y usuarios =================
