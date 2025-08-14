@@ -29,7 +29,6 @@ def get_gsheet():
         return None
 
 def load_data():
-    """Carga datos desde Google Sheets"""
     sheet = get_gsheet()
     if sheet:
         try:
@@ -45,7 +44,6 @@ def load_data():
     return init_dataframe()
 
 def save_data(df):
-    """Guarda DataFrame en Google Sheets"""
     sheet = get_gsheet()
     if sheet:
         try:
@@ -143,6 +141,8 @@ def app():
             st.session_state.df = load_or_init_data()
 
     asignaciones = get_asignaciones(st.session_state.df)
+    estado_opciones = ["Abierto", "En Progreso", "Resuelto", "Cerrado"]
+    prioridad_opciones = ["Alta", "Media", "Baja"]
 
     # Menú lateral
     with st.sidebar:
@@ -160,7 +160,7 @@ def app():
                 solicitante = st.text_input("Solicitante*")
                 departamento = st.selectbox("Departamento", ["GIS", "TOPOGRAFIA", "REVISION CAMPO", "ARBORICULTURA", "SERVICIOS"])
             with col2:
-                prioridad = st.selectbox("Prioridad*", ["Alta", "Media", "Baja"])
+                prioridad = st.selectbox("Prioridad*", prioridad_opciones)
                 categoria = st.selectbox("Categoría", ["Corrección_GIS", "Revision_Campo", "Plantaciones/Talas", "Actuaciones", "Otro"])
                 fecha_limite = st.date_input("Fecha Límite*", min_value=date.today(), value=date.today() + datetime.timedelta(days=3))
                 asignado_a = st.selectbox("Asignado a*", asignaciones)
@@ -200,11 +200,9 @@ def app():
         with st.expander("🔍 Filtros Avanzados"):
             cols = st.columns(3)
             with cols[0]:
-                opciones_estado = st.session_state.df.get('Estado', pd.Series()).dropna().unique().tolist()
-                filtro_estado = st.multiselect("Estado", opciones_estado, default=[v for v in ["Abierto"] if v in opciones_estado])
+                filtro_estado = st.multiselect("Estado", estado_opciones, default=["Abierto"])
             with cols[1]:
-                opciones_prioridad = st.session_state.df.get('Prioridad', pd.Series()).dropna().unique().tolist()
-                filtro_prioridad = st.multiselect("Prioridad", opciones_prioridad, default=opciones_prioridad)
+                filtro_prioridad = st.multiselect("Prioridad", prioridad_opciones, default=prioridad_opciones)
             with cols[2]:
                 opciones_departamento = st.session_state.df.get('Departamento', pd.Series()).dropna().unique().tolist()
                 filtro_departamento = st.multiselect("Departamento", opciones_departamento, default=opciones_departamento)
@@ -214,9 +212,12 @@ def app():
         if filtro_prioridad: filtered_df = filtered_df[filtered_df['Prioridad'].isin(filtro_prioridad)]
         if filtro_departamento: filtered_df = filtered_df[filtered_df['Departamento'].isin(filtro_departamento)]
 
-        for col in ["Estado", "Prioridad", "Asignado a"]:
-            if col in filtered_df.columns:
-                filtered_df[col] = filtered_df[col].astype(str)
+        # Normalizar tipos y valores antes de data_editor
+        filtered_df["Fecha Límite"] = pd.to_datetime(filtered_df["Fecha Límite"], errors="coerce")
+        filtered_df["Fecha Límite"] = filtered_df["Fecha Límite"].fillna(pd.Timestamp.today())
+        filtered_df["Estado"] = filtered_df["Estado"].where(filtered_df["Estado"].isin(estado_opciones), "Abierto")
+        filtered_df["Prioridad"] = filtered_df["Prioridad"].where(filtered_df["Prioridad"].isin(prioridad_opciones), "Media")
+        filtered_df["Asignado a"] = filtered_df["Asignado a"].where(filtered_df["Asignado a"].isin(asignaciones), "Sin asignar")
 
         if not filtered_df.empty:
             st.write(f"Mostrando {len(filtered_df)} de {len(st.session_state.df)} tickets")
@@ -225,8 +226,8 @@ def app():
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Estado": st.column_config.SelectboxColumn("Estado", options=["Abierto", "En Progreso", "Resuelto", "Cerrado"], required=True),
-                    "Prioridad": st.column_config.SelectboxColumn("Prioridad", options=["Alta", "Media", "Baja"], required=True),
+                    "Estado": st.column_config.SelectboxColumn("Estado", options=estado_opciones, required=True),
+                    "Prioridad": st.column_config.SelectboxColumn("Prioridad", options=prioridad_opciones, required=True),
                     "Fecha Límite": st.column_config.DateColumn("Fecha Límite", format="YYYY-MM-DD", required=True),
                     "Asignado a": st.column_config.SelectboxColumn("Asignado a", options=asignaciones, required=True),
                 },
@@ -251,18 +252,29 @@ def app():
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Tickets", len(st.session_state.df))
         col2.metric("Tickets Abiertos", len(st.session_state.df[st.session_state.df['Estado'] == "Abierto"]))
-        if 'Fecha Límite' in st.session_state.df.columns:
-            hoy = pd.to_datetime(date.today())
-            vencidos = st.session_state.df[(st.session_state.df['Estado'] != "Cerrado") & (pd.to_datetime(st.session_state.df['Fecha Límite']) < hoy)]
-            col3.metric("Tickets Vencidos", len(vencidos))
+        hoy = pd.to_datetime(date.today())
+        vencidos = st.session_state.df[(st.session_state.df['Estado'] != "Cerrado") & (pd.to_datetime(st.session_state.df['Fecha Límite']) < hoy)]
+        col3.metric("Tickets Vencidos", len(vencidos))
 
         tab1, tab2, tab3 = st.tabs(["Por Estado", "Por Prioridad", "Por Departamento"])
         with tab1:
-            st.altair_chart(alt.Chart(st.session_state.df).mark_bar().encode(x="count():Q", y="Estado:N", color="Estado:N").properties(height=400), use_container_width=True)
+            st.altair_chart(
+                alt.Chart(st.session_state.df).mark_bar().encode(
+                    x="count():Q", y="Estado:N", color="Estado:N"
+                ).properties(height=400), use_container_width=True
+            )
         with tab2:
-            st.altair_chart(alt.Chart(st.session_state.df).mark_arc().encode(theta="count():Q", color="Prioridad:N").properties(height=400), use_container_width=True)
+            st.altair_chart(
+                alt.Chart(st.session_state.df).mark_arc().encode(
+                    theta="count():Q", color="Prioridad:N"
+                ).properties(height=400), use_container_width=True
+            )
         with tab3:
-            st.altair_chart(alt.Chart(st.session_state.df).mark_bar().encode(x="count():Q", y="Departamento:N", color="Prioridad:N").properties(height=400), use_container_width=True)
+            st.altair_chart(
+                alt.Chart(st.session_state.df).mark_bar().encode(
+                    x="count():Q", y="Departamento:N", color="Prioridad:N"
+                ).properties(height=400), use_container_width=True
+            )
 
 # ================= Lógica de login =================
 if "token" in st.session_state:
