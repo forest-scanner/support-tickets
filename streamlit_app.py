@@ -47,10 +47,15 @@ def save_data(df):
     sheet = get_gsheet()
     if sheet:
         try:
+            df_to_save = df.copy()
+            for col in ["Fecha Creación", "Fecha Límite"]:
+                if col in df_to_save.columns:
+                    df_to_save[col] = df_to_save[col].dt.strftime("%Y-%m-%d")  # Convertir a string
             sheet.clear()
-            sheet.update([df.columns.values.tolist()] + df.values.tolist())
+            sheet.update([df_to_save.columns.values.tolist()] + df_to_save.values.tolist())
         except Exception as e:
             st.error(f"No se pudo guardar en Google Sheets: {e}")
+
 
 # ================= Configuración JWT y usuarios =================
 SECRET = st.secrets.get("COOKIE_SECRET", "default_secret_key_32_chars_long_1234")
